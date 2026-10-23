@@ -10,9 +10,13 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate   /   Linux·macOS: source .venv/bin/activate
 pip install -r requirements.txt
 
-python run_all.py            # 전체 실행 + 요약 (약 2~4분)
+python run_all.py            # 전체 실행 + 요약 (약 4분, study 는 메모리에만 존재)
 python run_all.py 02 08      # 번호로 일부만 실행
 cd examples && python 01_basic_quickstart.py   # 개별 실행
+
+# Optuna Dashboard 로 결과 보기
+python run_all.py --dashboard   # 모든 study 를 outputs/dashboard.log 에 저장하며 실행 (약 5분)
+python dashboard.py             # → http://127.0.0.1:8080
 ```
 
 > `torch`(GPSampler), `optuna-integration`/`lightgbm`(12), `optunahub`(15) 가 없으면 해당 부분만 건너뜁니다.
@@ -37,15 +41,48 @@ cd examples && python 01_basic_quickstart.py   # 개별 실행
 | 13 | `13_distributions_search_space.py` | Distribution 객체/JSON 직렬화/호환성, internal·external 표현, `IntersectionSearchSpace`, trial 필터링, multi-index DataFrame |
 | 14 | `14_custom_sampler_pruner.py` | `BaseSampler` 상속(Simulated Annealing), `BasePruner` 상속 |
 | 15 | `15_optunahub.py` | `optunahub.load_module("samplers/auto_sampler")` — AutoSampler (단일/다목적) |
-| 16 | `16_cli_and_dashboard.py` | `optuna` CLI(create-study, ask/tell, studies, trials, best-trial, set-user-attr), 대시보드용 DB 생성 |
+| 16 | `16_cli_and_dashboard.py` | `optuna` CLI(create-study, ask/tell, studies, trials, best-trial, set-user-attr), 대시보드용 study 생성 |
+| 17 | `17_dashboard_features.py` | **대시보드 전용 기능**: `save_note`, `save_plotly_graph_object`, artifact 미리보기, Human-in-the-loop(`register_objective_form_widgets`, `ObjectiveUserAttrRef`), `register_user_attr_form_widgets`, Preferential optimization |
 
-## Optuna Dashboard
+## Optuna Dashboard 연동
+
+대시보드는 **스토리지에 저장된 study 만** 보여줍니다. 예제는 기본적으로 메모리(InMemoryStorage)에서
+돌기 때문에, `--dashboard` 옵션으로 실행해야 대시보드에 나타납니다.
 
 ```bash
-python examples/16_cli_and_dashboard.py
-optuna-dashboard sqlite:///outputs/16_dashboard.db
-# → http://127.0.0.1:8080
+python run_all.py --dashboard        # 또는 일부만: python run_all.py --dashboard 02 04 17
+python dashboard.py                  # 옵션: --port 8081 --host 0.0.0.0
+# CLI 로 직접: optuna-dashboard outputs/dashboard.log --artifact-dir outputs/artifacts
 ```
+
+- `--dashboard` 이면 `examples/common.py` 가 `optuna.create_study()` 를 감싸서, storage 를 지정하지 않은
+  모든 study 를 `outputs/dashboard.log` 에 저장합니다. 예제 코드는 수정할 필요가 없습니다.
+- study 이름은 `<예제파일>/<섹션번호> <샘플러>` 형식입니다 (예: `02_samplers/02-1 GPSampler`).
+  재실행하면 같은 이름의 study 는 지우고 새로 만듭니다.
+- 스토리지는 **JournalStorage(파일)** 를 씁니다. 이 예제 기준으로 SQLite 보다 약 7배 빠르고(전체 실행 약 5분 vs 10분),
+  Windows 에서도 동작하도록 `JournalFileOpenLock` 을 사용합니다.
+- artifact(이미지, CSV, 모델)는 `outputs/artifacts/` 에 저장되고, `dashboard.py` 가 같은 위치를 연결해서
+  대시보드에서 미리보기·다운로드할 수 있습니다.
+
+### 17번 예제에서 해볼 것
+
+| study | 대시보드에서 할 일 |
+|-------|-------------------|
+| `17_dashboard/notes-graphs-artifacts` | study/trial 노트(Markdown) 보기·편집, 사용자 정의 그래프, trial 별 CSV artifact 미리보기 |
+| `17_dashboard/human-in-the-loop` | RUNNING 상태 trial 의 색상 이미지를 보고 **슬라이더로 점수 입력 → trial 완료** |
+| `17_dashboard/objective-from-user-attr` | 목적 2개 중 1개는 코드가 계산한 값(`ObjectiveUserAttrRef`), 1개는 사람이 선택 |
+| `17_dashboard/user-attr-form` | 완료된 trial 에 코멘트/리뷰 결과(user_attr) 입력 |
+| `17_dashboard/preferential` | 후보 이미지 중 **가장 나쁜 것(WORST)** 을 골라 선호도 기록 |
+
+> 참고: objective 입력 폼과 user_attr 입력 폼은 같은 저장 키를 써서 한 study 에 둘 중 하나만 등록할 수 있습니다.
+
+### 화면 예시
+
+| study 목록 | 다목적 파레토 프론트 (04) |
+|---|---|
+| ![](docs/images/dashboard_studies.png) | ![](docs/images/dashboard_pareto.png) |
+| **Human-in-the-loop (17)** | **Preferential optimization (17)** |
+| ![](docs/images/dashboard_human_in_the_loop.png) | ![](docs/images/dashboard_preferential.png) |
 
 ## v5.0 에서 확인된 변경/주의 사항
 
@@ -58,6 +95,7 @@ optuna-dashboard sqlite:///outputs/16_dashboard.db
 | `CmaEsSampler(restart_strategy="ipop")` (v4.4 deprecated) | OptunaHub 의 CMA-ES 패키지 |
 | `optuna.terminator` (v4.9 deprecated, v6.0 제거 예정) | 아직 동작함 — 향후 OptunaHub 로 이전 |
 | 중요도 기본 평가기 fANOVA | PED-ANOVA (`PedAnovaImportanceEvaluator`) |
+| `optuna_dashboard.set_objective_names(study, names)` (deprecated) | `study.set_metric_names(names)` |
 | `TPESampler(constant_liar=False)` 기본값 | `constant_liar=True` 기본값 (병렬 최적화에 유리) |
 
 ## 폴더 구조
@@ -66,9 +104,13 @@ optuna-dashboard sqlite:///outputs/16_dashboard.db
 Optuna_test/
 ├── README.md
 ├── requirements.txt
-├── run_all.py            # 전체 실행 + 요약
+├── run_all.py            # 전체 실행 + 요약 (--dashboard 옵션)
+├── dashboard.py          # Optuna Dashboard 실행 (dashboard.log + artifacts 연결)
+├── docs/images/          # 대시보드 화면 예시
 ├── examples/
-│   ├── common.py         # 공통 유틸(출력 경로, 벤치마크 함수)
-│   └── 01_ ~ 16_*.py
+│   ├── common.py         # 공통 유틸(출력 경로, 벤치마크 함수, 대시보드 스토리지 연동)
+│   └── 01_ ~ 17_*.py
 └── outputs/              # 실행 결과 (git 제외)
+    ├── dashboard.log     # --dashboard 실행 시 모든 study
+    └── artifacts/        # artifact 파일
 ```

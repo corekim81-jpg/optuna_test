@@ -7,20 +7,19 @@
 - optuna-dashboard 로 웹 UI 확인 (pip install optuna-dashboard)
 
 이 스크립트는 위 CLI 명령을 subprocess 로 실행해 결과를 보여주고,
-대시보드에서 볼 수 있는 SQLite DB(outputs/16_dashboard.db)를 만든다.
+대시보드에서 볼 수 있는 study 를 outputs/dashboard.log 에 만든다.
 """
 import json
 import shutil
 import subprocess
 import sys
 
-from common import header, out, remove, sqlite_url
+from common import fresh_dashboard_study, header, out, remove, sqlite_url
 
 import optuna
 
 DB = out("16_cli.db")
 URL = sqlite_url("16_cli.db")
-DASH_DB = out("16_dashboard.db")
 
 
 def optuna_cli(*args: str) -> str:
@@ -35,7 +34,6 @@ def optuna_cli(*args: str) -> str:
 
 def main() -> None:
     remove(DB)
-    remove(DASH_DB)
 
     header("16-1. CLI: create-study / study set-user-attr / study-names")
     print(optuna_cli("create-study", "--study-name", "cli-study", "--direction", "minimize"))
@@ -65,7 +63,7 @@ def main() -> None:
     header("16-4. 대시보드용 DB 생성")
     for name, sampler in [("dash-tpe", optuna.samplers.TPESampler(seed=0)),
                           ("dash-random", optuna.samplers.RandomSampler(seed=0))]:
-        st = optuna.create_study(study_name=name, storage=sqlite_url("16_dashboard.db"), sampler=sampler)
+        st = fresh_dashboard_study(f"16_cli/{name}", sampler=sampler)
 
         def obj(trial: optuna.Trial) -> float:
             x = trial.suggest_float("x", -5, 5)
@@ -75,13 +73,12 @@ def main() -> None:
             return x**2 + y**2
 
         st.optimize(obj, n_trials=50)
-    mo = optuna.create_study(study_name="dash-multiobjective", storage=sqlite_url("16_dashboard.db"),
-                             directions=["minimize", "minimize"])
+    mo = fresh_dashboard_study("16_cli/dash-multiobjective", directions=["minimize", "minimize"])
     mo.set_metric_names(["cost", "latency"])
     mo.optimize(lambda t: (t.suggest_float("a", 0, 1), 1 - t.suggest_float("a", 0, 1) ** 0.5), n_trials=50)
-    print("  생성:", DASH_DB)
-    print("  실행(레포 루트에서): optuna-dashboard sqlite:///outputs/16_dashboard.db")
-    print("        → 브라우저에서 http://127.0.0.1:8080 접속")
+    print("  저장: outputs/dashboard.log")
+    print("  실행(레포 루트에서): python dashboard.py  → http://127.0.0.1:8080")
+    print("  CLI 로 보려면 --storage outputs/dashboard.log --storage-class JournalFileBackend (16_cli.db 는 CLI 데모 전용)")
 
 
 if __name__ == "__main__":

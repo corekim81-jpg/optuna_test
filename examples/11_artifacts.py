@@ -12,7 +12,7 @@ import os
 import pickle
 import shutil
 
-from common import OUT_DIR, header, out, sqlite_url
+from common import ARTIFACT_DIR, DASHBOARD_MODE, OUT_DIR, fresh_dashboard_study, header, out, example_storage
 from sklearn.datasets import load_iris
 from sklearn.model_selection import cross_val_score
 from sklearn.svm import SVC
@@ -26,15 +26,14 @@ from optuna.artifacts import (
     upload_artifact,
 )
 
-ART_DIR = OUT_DIR / "11_artifacts"
+ART_DIR = ARTIFACT_DIR  # dashboard.py 와 공유 → 대시보드에서 artifact 미리보기 가능
 TMP_DIR = OUT_DIR / "11_tmp"
 X, y = load_iris(return_X_y=True)
 
 
 def main() -> None:
-    shutil.rmtree(ART_DIR, ignore_errors=True)
     shutil.rmtree(TMP_DIR, ignore_errors=True)
-    ART_DIR.mkdir(parents=True)
+    ART_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True)
     # Backoff 로 감싸면 일시적 I/O 오류 시 지수 백오프 재시도
     store = Backoff(FileSystemArtifactStore(base_path=str(ART_DIR)), max_retries=3)
@@ -61,14 +60,18 @@ def main() -> None:
         return score
 
     header("11-1. trial 마다 모델/메타데이터 artifact 업로드")
-    db = out("11_artifacts.db")
-    if os.path.exists(db):
-        os.remove(db)
-    study = optuna.create_study(direction="maximize", storage=sqlite_url("11_artifacts.db"),
-                                study_name="artifact-demo", sampler=optuna.samplers.TPESampler(seed=0))
+    sampler = optuna.samplers.TPESampler(seed=0)
+    if DASHBOARD_MODE:  # 대시보드 모드: 공용 대시보드 스토리지에 저장
+        study = fresh_dashboard_study("11_artifacts/artifact-demo", direction="maximize", sampler=sampler)
+    else:
+        db = out("11_artifacts.db")
+        if os.path.exists(db):
+            os.remove(db)
+        study = optuna.create_study(direction="maximize", storage=example_storage("11_artifacts.db"),
+                                    study_name="artifact-demo", sampler=sampler)
     study.optimize(objective, n_trials=15)
     print("  best:", round(study.best_value, 4), study.best_params)
-    print("  artifact 디렉토리 파일 수:", len(list(ART_DIR.iterdir())))
+    print("  artifact 저장 위치:", ART_DIR)
 
     header("11-2. Study 레벨 artifact (요약 리포트)")
     report = TMP_DIR / "study_report.txt"
@@ -80,7 +83,7 @@ def main() -> None:
     header("11-3. best trial 의 artifact 목록 조회 & 모델 다운로드 후 재사용")
     best = study.best_trial
     # FrozenTrial 은 storage 정보를 갖지 않으므로 storage 를 명시
-    storage = optuna.storages.get_storage(sqlite_url("11_artifacts.db"))
+    storage = optuna.storages.get_storage(example_storage("11_artifacts.db"))
     for m in get_all_artifact_meta(best, storage=storage):
         print(f"  {m.filename:16s} {m.mimetype:28s} id={m.artifact_id[:8]}...")
     dl_path = TMP_DIR / "best_model.pkl"
@@ -93,7 +96,7 @@ def main() -> None:
     print("\n  [참고] 클라우드 저장소:")
     print("   Boto3ArtifactStore(bucket_name='my-bucket')   # S3 / MinIO (boto3 필요)")
     print("   GCSArtifactStore(bucket_name='my-bucket')     # Google Cloud Storage")
-    print("   optuna-dashboard 에서 artifact 를 바로 미리보기/다운로드 가능")
+    print("   `python run_all.py --dashboard` 후 `python dashboard.py` 로 artifact 미리보기/다운로드 가능")
 
 
 if __name__ == "__main__":
