@@ -1,0 +1,10 @@
+# 예제 실행 결과물
+outputs/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+*.log
+.ipynb_checkpoints/

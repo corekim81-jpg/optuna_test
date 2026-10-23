@@ -1,0 +1,20 @@
+# 핵심 (검증 버전: optuna 5.0.0, Python 3.13)
+optuna>=5.0
+numpy
+pandas
+scipy
+scikit-learn
+
+# 시각화 (08 예제)
+plotly
+matplotlib
+
+# 샘플러 의존성 (02, 04 예제)
+cmaes          # CmaEsSampler
+torch          # GPSampler (CPU 버전으로 충분)
+
+# 통합 / 확장 (12, 15, 16 예제)
+optuna-integration
+lightgbm
+optunahub
+optuna-dashboard
